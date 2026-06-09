@@ -1,0 +1,38 @@
+# Strategic Intelligence Digest — Topic Configuration
+#
+# Add or remove topics freely. Each topic pulls from its listed RSS feeds.
+# The digest synthesizes across ALL topics into one unified morning briefing.
+# Recommended: 3-5 topics, 2-3 feeds each.
+
+topics:
+  - name: AI & Technology
+    feeds:
+      - url: https://techcrunch.com/category/artificial-intelligence/feed/
+        label: TechCrunch AI
+      - url: https://www.technologyreview.com/feed/
+        label: MIT Technology Review
+      - url: https://www.theverge.com/rss/ai-artificial-intelligence/index.xml
+        label: The Verge AI
+
+  - name: Business Strategy
+    feeds:
+      - url: https://feeds.hbr.org/harvardbusiness
+        label: Harvard Business Review
+      - url: https://www.strategy-business.com/rss/
+        label: Strategy+Business
+      - url: https://www.fastcompany.com/latest/rss
+        label: Fast Company
+
+  - name: Finance & Markets
+    feeds:
+      - url: https://rss.nytimes.com/services/xml/rss/nyt/Business.xml
+        label: NYT Business
+      - url: https://feeds.reuters.com/reuters/businessNews
+        label: Reuters Business
+
+  - name: Career & Leadership
+    feeds:
+      - url: https://feeds.hbr.org/harvardbusiness/leadership
+        label: HBR Leadership
+      - url: https://www.linkedin.com/pulse/rss/
+        label: LinkedIn Pulse
