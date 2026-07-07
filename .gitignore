@@ -4,3 +4,8 @@ __pycache__/
 *.pyc
 *.log
 .DS_Store
+output/blog/*.md
+output/blog/publish-state.json
+output/digests/*.md
+output/blog/*.json
+output/digests/*.json
