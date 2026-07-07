@@ -36,3 +36,12 @@ topics:
         label: HBR Leadership
       - url: https://www.linkedin.com/pulse/rss/
         label: LinkedIn Pulse
+
+  - name: US Immigration & Adjustment of Status
+    feeds:
+      - url: https://www.uscis.gov/feeds/uscis-news-all
+        label: USCIS News
+      - url: https://travel.state.gov/content/travel/en/News/visas-news.atom.xml
+        label: State Dept Visa News
+      - url: https://feeds.lexblog.com/ImmigrationProfBlog
+        label: Immigration Prof Blog
