@@ -9,6 +9,18 @@ import anthropic
 
 from blog.config import BlogConfig
 from blog.models import BlogPost
+from blog.seo import (
+    INTERNAL_LINK_TARGET_UNIVERSE,
+    MAX_INTERNAL_LINK_TARGETS,
+    MAX_SECONDARY_KEYWORDS,
+    MAX_SUGGESTED_RELATED_POSTS,
+    MIN_SECONDARY_KEYWORDS,
+    TOPIC_CLUSTERS,
+    is_allowed_internal_link_url,
+    is_valid_topic_cluster,
+    known_blog_posts,
+    path_only,
+)
 from blog.sources import (
     format_sources_section,
     is_valid_url,
@@ -46,6 +58,31 @@ Editorial rules:
   "This underscores", "delve", "landscape", "game-changer", "navigating",
   or "robust".
 
+Discoverability metadata rules (this is not keyword stuffing -- the goal is
+to clarify the article's strategic theme, improve internal linking, and help
+the site build topic authority; never distort or pad the editorial content
+to fit these fields):
+- topic_cluster must be exactly one value from the controlled list supplied
+  below. Never invent a new cluster name or alter the wording.
+- seo_title is a distinct, explicit, search-friendly rendering of the same
+  story. `title` stays editorial and can be evocative; `seo_title` states the
+  topic plainly. Neither may be generic or clickbait, and seo_title must
+  never be identical to title.
+- primary_keyword is one specific, natural phrase describing the article's
+  core topic, not a generic word.
+- secondary_keywords are 3 to 7 natural phrases a reader would actually
+  search for; do not repeat the primary keyword verbatim and do not list
+  single disconnected words.
+- internal_link_targets are 1 to 4 recommendations, each an object with
+  label, url, reason, and optionally status. url must be copied exactly from
+  the allowed target universe supplied below; never invent a path. If a
+  target is not yet live on the site, still include it if it is in the
+  allowed universe, and set status to "planned".
+- suggested_related_posts are 0 to 3 recommendations, each an object with
+  title, url, and reason, chosen only from the "known existing posts" list
+  supplied below. If no existing post is genuinely related, return an empty
+  list; never invent a post or a URL.
+
 Return valid JSON only. Do not use a Markdown code fence."""
 
 
@@ -58,6 +95,15 @@ DAILY DIGEST:
 
 SOURCE CARDS:
 {source_cards}
+
+CONTROLLED TOPIC CLUSTERS (choose exactly one, verbatim):
+{topic_clusters}
+
+ALLOWED INTERNAL LINK TARGETS (choose 1 to 4 urls, verbatim, from this list only):
+{internal_link_universe}
+
+KNOWN EXISTING BLOG POSTS (choose 0 to 3 from this list only, or none if nothing is genuinely related):
+{known_posts}
 
 Produce a JSON object with exactly these keys:
 - title: a specific, compelling headline
@@ -72,6 +118,14 @@ Produce a JSON object with exactly these keys:
 - source_ids: IDs of every source card relied upon for a factual claim; this
   list is used to build the visible, published Sources section, so it must
   include every card whose fact appears in body_markdown
+- seo_title: see discoverability metadata rules above
+- topic_cluster: exactly one value copied from CONTROLLED TOPIC CLUSTERS
+- primary_keyword: one specific, natural phrase
+- secondary_keywords: 3 to 7 natural phrases
+- internal_link_targets: 1 to 4 objects {{label, url, reason, status?}},
+  urls copied verbatim from ALLOWED INTERNAL LINK TARGETS
+- suggested_related_posts: 0 to 3 objects {{title, url, reason}}, chosen only
+  from KNOWN EXISTING BLOG POSTS (empty list if none genuinely relate)
 
 The article must synthesize the evidence into analysis. It must not merely expand
 the digest bullets. If the digest has no source cards, treat the digest itself as
@@ -107,6 +161,7 @@ class BlogArticleTransformer:
                 "\nREVISION REQUIRED. Correct every issue below:\n- "
                 + "\n- ".join(revision_issues)
             )
+        known_posts = known_blog_posts(self.config.output_dir)
         response = self.client.messages.create(
             model=self.model,
             max_tokens=6500,
@@ -120,6 +175,17 @@ class BlogArticleTransformer:
                     maximum_words=self.config.maximum_words,
                     briefing=digest.briefing,
                     source_cards=json.dumps(cards, ensure_ascii=False, indent=2),
+                    topic_clusters="\n".join(f"- {c}" for c in TOPIC_CLUSTERS),
+                    internal_link_universe="\n".join(
+                        f"- {u}" for u in INTERNAL_LINK_TARGET_UNIVERSE
+                    ),
+                    known_posts=(
+                        "\n".join(
+                            f'- title: "{p["title"]}", url: "{p["url"]}"'
+                            for p in known_posts
+                        )
+                        or "(none yet -- return an empty list)"
+                    ),
                     revision_notes=notes,
                 ),
             }],
@@ -139,6 +205,8 @@ class BlogArticleTransformer:
         body = strip_sources_section(payload["body_markdown"].strip())
         body = f"{body}\n\n{format_sources_section(resolved_sources)}"
 
+        known_post_urls = {p["url"] for p in known_posts}
+
         return BlogPost(
             title=payload["title"].strip(),
             subtitle=payload["subtitle"].strip(),
@@ -156,6 +224,16 @@ class BlogArticleTransformer:
             source_ids=source_ids,
             sources=resolved_sources,
             minimum_sources_required=minimum_required,
+            seo_title=str(payload.get("seo_title") or "").strip(),
+            topic_cluster=_clean_topic_cluster(payload.get("topic_cluster")),
+            primary_keyword=str(payload.get("primary_keyword") or "").strip(),
+            secondary_keywords=_clean_secondary_keywords(payload.get("secondary_keywords")),
+            internal_link_targets=_clean_internal_link_targets(
+                payload.get("internal_link_targets")
+            ),
+            suggested_related_posts=_clean_suggested_related_posts(
+                payload.get("suggested_related_posts"), known_post_urls
+            ),
         )
 
 
@@ -184,6 +262,65 @@ def _resolve_sources(cards: List[dict], source_ids: List[str]) -> List[dict]:
             "date": short_date(card.get("published")),
         })
     return resolved
+
+
+def _clean_topic_cluster(value) -> str:
+    """Keeps a model-supplied topic_cluster only if it exactly matches the
+    controlled list; otherwise drops it to empty (a `blog:check` warning,
+    not an invented or invalid value written to disk)."""
+    candidate = str(value or "").strip()
+    return candidate if is_valid_topic_cluster(candidate) else ""
+
+
+def _clean_secondary_keywords(value) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    cleaned = [str(kw).strip() for kw in value if str(kw).strip()]
+    return cleaned[:MAX_SECONDARY_KEYWORDS]
+
+
+def _clean_internal_link_targets(value) -> List[dict]:
+    """Keeps only well-formed {label, url, ...} entries whose url is in the
+    allowed target universe; silently drops anything else rather than
+    writing an invented or out-of-universe URL to disk."""
+    if not isinstance(value, list):
+        return []
+    cleaned = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "").strip()
+        url = str(item.get("url") or "").strip()
+        if not label or not url or not is_allowed_internal_link_url(url):
+            continue
+        entry = {"label": label, "url": path_only(url)}
+        if str(item.get("reason") or "").strip():
+            entry["reason"] = str(item["reason"]).strip()
+        if str(item.get("status") or "").strip():
+            entry["status"] = str(item["status"]).strip()
+        cleaned.append(entry)
+    return cleaned[:MAX_INTERNAL_LINK_TARGETS]
+
+
+def _clean_suggested_related_posts(value, known_post_urls) -> List[dict]:
+    """Keeps only well-formed {title, url, ...} entries whose url matches a
+    known existing post; silently drops anything else rather than inventing
+    a related post."""
+    if not isinstance(value, list):
+        return []
+    cleaned = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        url = str(item.get("url") or "").strip()
+        if not title or not url or path_only(url) not in known_post_urls:
+            continue
+        entry = {"title": title, "url": path_only(url)}
+        if str(item.get("reason") or "").strip():
+            entry["reason"] = str(item["reason"]).strip()
+        cleaned.append(entry)
+    return cleaned[:MAX_SUGGESTED_RELATED_POSTS]
 
 
 def _minimum_sources_required(digest: Digest) -> int:

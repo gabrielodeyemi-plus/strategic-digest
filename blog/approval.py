@@ -12,6 +12,7 @@ import yaml
 
 from blog.config import BlogConfig
 from blog.publishers import PublishStateStore
+from blog.seo import evaluate_seo_metadata, known_blog_post_urls
 from blog.sources import has_visible_sources, is_valid_url, split_article_and_sources
 
 
@@ -57,7 +58,7 @@ def approve_blog_post(
     source_path = _locate_source(config.output_dir, requested_date)
     original = source_path.read_text(encoding="utf-8")
     frontmatter, updated = _validate_and_approve_markdown(
-        original, source_path, requested_date
+        original, source_path, requested_date, config
     )
     title = frontmatter["title"].strip()
     current_status = frontmatter["status"].strip().lower()
@@ -212,6 +213,7 @@ def _validate_and_approve_markdown(
     markdown: str,
     source_path: Path,
     requested_date: date,
+    config: BlogConfig,
 ) -> tuple[dict, str]:
     match = _FRONTMATTER.match(markdown)
     if not match:
@@ -224,6 +226,13 @@ def _validate_and_approve_markdown(
         ) from exc
     if not isinstance(parsed, dict):
         raise ApprovalError(f"{source_path.name} frontmatter must be an object.")
+
+    seo_readiness = _evaluate_seo_readiness(parsed, config, exclude_path=source_path)
+    if seo_readiness["blockers"]:
+        raise ApprovalError(
+            f"{source_path.name} has invalid discoverability metadata:\n- "
+            + "\n- ".join(seo_readiness["blockers"])
+        )
 
     for field in ("title", "status"):
         if not isinstance(parsed.get(field), str) or not parsed[field].strip():
@@ -262,6 +271,21 @@ def _validate_and_approve_markdown(
         + markdown[match.end("yaml"):]
     )
     return parsed, updated
+
+
+def _evaluate_seo_readiness(
+    frontmatter: dict,
+    config: BlogConfig,
+    exclude_path: Optional[Path] = None,
+) -> dict:
+    """Thin, shared wrapper around `blog.seo.evaluate_seo_metadata` that
+    resolves "known existing posts" from this StrategicDigest instance's
+    own output directory. `blog:check` and `approve_blog_post` both call
+    this so they can never disagree about whether discoverability metadata
+    is valid. See blog/seo.py for the warn-vs-block policy.
+    """
+    known_urls = known_blog_post_urls(config.output_dir, exclude_path=exclude_path)
+    return evaluate_seo_metadata(frontmatter, known_post_urls=known_urls)
 
 
 def _evaluate_sources_readiness(frontmatter: dict, markdown: str) -> dict:

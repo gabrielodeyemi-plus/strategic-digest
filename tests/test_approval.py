@@ -42,6 +42,23 @@ _VALID_SOURCES_SECTION = (
 )
 
 
+# A complete, valid discoverability metadata block. Included by default so
+# every existing fixture/test stays "READY" (no SEO warnings) unless it
+# opts in to testing SEO behavior specifically via the override params below.
+_VALID_SEO_YAML = (
+    'seo_title: "AI Governance and Enterprise Trust in Practice"\n'
+    'topic_cluster: "AI Governance"\n'
+    'primary_keyword: "AI governance and trust"\n'
+    'secondary_keywords: ["enterprise AI adoption", "AI risk management", '
+    '"AI competitive advantage"]\n'
+    "internal_link_targets:\n"
+    '  - label: "Strategic Digest"\n'
+    '    url: "/blog"\n'
+    '    reason: "Part of the Strategic Digest analysis archive."\n'
+    "suggested_related_posts: []\n"
+)
+
+
 def markdown(
     post_date="2026-07-06",
     status="draft",
@@ -49,11 +66,46 @@ def markdown(
     include_sources=True,
     minimum_sources_required=3,
     body_sources_section=None,
+    include_seo=True,
+    topic_cluster=None,
+    secondary_keywords=None,
+    internal_link_targets_yaml=None,
 ):
     title_line = f'title: "{TITLE}"\n' if include_title else ""
     sources_yaml = _VALID_SOURCES_YAML if include_sources else "sources: []\n"
     if body_sources_section is None:
         body_sources_section = _VALID_SOURCES_SECTION if include_sources else ""
+
+    if not include_seo:
+        seo_yaml = ""
+    elif topic_cluster is not None or secondary_keywords is not None or internal_link_targets_yaml is not None:
+        keywords = (
+            secondary_keywords
+            if secondary_keywords is not None
+            else ["enterprise AI adoption", "AI risk management", "AI competitive advantage"]
+        )
+        keywords_yaml = "[" + ", ".join(f'"{kw}"' for kw in keywords) + "]"
+        links_yaml = (
+            internal_link_targets_yaml
+            if internal_link_targets_yaml is not None
+            else (
+                "internal_link_targets:\n"
+                '  - label: "Strategic Digest"\n'
+                '    url: "/blog"\n'
+                '    reason: "Part of the Strategic Digest analysis archive."\n'
+            )
+        )
+        seo_yaml = (
+            'seo_title: "AI Governance and Enterprise Trust in Practice"\n'
+            f'topic_cluster: "{topic_cluster if topic_cluster is not None else "AI Governance"}"\n'
+            'primary_keyword: "AI governance and trust"\n'
+            f"secondary_keywords: {keywords_yaml}\n"
+            f"{links_yaml}"
+            "suggested_related_posts: []\n"
+        )
+    else:
+        seo_yaml = _VALID_SEO_YAML
+
     return (
         "---\n"
         f"{title_line}"
@@ -63,6 +115,7 @@ def markdown(
         'tags: ["strategy", "AI"]\n'
         f'status: "{status}"\n'
         'excerpt: "A precise strategic reading."\n'
+        f"{seo_yaml}"
         f"minimum_sources_required: {minimum_sources_required}\n"
         f"{sources_yaml}"
         "---\n\n"

@@ -20,6 +20,7 @@ from blog.approval import (
     _FRONTMATTER,
     _evaluate_metadata_consistency,
     _evaluate_quality_metadata,
+    _evaluate_seo_readiness,
     _evaluate_sources_readiness,
     _locate_source,
     _parse_frontmatter_date,
@@ -57,11 +58,17 @@ class CheckResult:
     sources_required_minimum: int = 0
     content_items: List[CheckItem] = field(default_factory=list)
     sources_items: List[CheckItem] = field(default_factory=list)
+    seo_items: List[CheckItem] = field(default_factory=list)
     website_items: List[CheckItem] = field(default_factory=list)
 
     @property
     def all_items(self) -> List[CheckItem]:
-        return [*self.content_items, *self.sources_items, *self.website_items]
+        return [
+            *self.content_items,
+            *self.sources_items,
+            *self.seo_items,
+            *self.website_items,
+        ]
 
     @property
     def blockers(self) -> List[str]:
@@ -261,6 +268,15 @@ def run_check(requested_date: date, config: BlogConfig) -> CheckResult:
             )
         )
 
+    seo_items: List[CheckItem] = []
+    seo_readiness = _evaluate_seo_readiness(frontmatter, config, exclude_path=source_path)
+    for warning in seo_readiness["warnings"]:
+        seo_items.append(_warn(warning))
+    for blocker in seo_readiness["blockers"]:
+        seo_items.append(_fail(blocker))
+    if not seo_readiness["warnings"] and not seo_readiness["blockers"]:
+        seo_items.append(_pass("discoverability metadata present and valid"))
+
     website_items: List[CheckItem] = []
     destination_path: Optional[Path] = None
     website_local_url = ""
@@ -300,6 +316,7 @@ def run_check(requested_date: date, config: BlogConfig) -> CheckResult:
         sources_required_minimum=required_minimum,
         content_items=content_items,
         sources_items=sources_items,
+        seo_items=seo_items,
         website_items=website_items,
     )
 
@@ -335,6 +352,11 @@ def render_report(result: CheckResult) -> str:
 
     lines.append("Sources:")
     for item in result.sources_items:
+        lines.append(f"{_tag(item)} {item.message}")
+    lines.append("")
+
+    lines.append("SEO / discoverability:")
+    for item in result.seo_items:
         lines.append(f"{_tag(item)} {item.message}")
     lines.append("")
 

@@ -113,6 +113,121 @@ The Markdown file includes portable YAML frontmatter. `publish-state.json` is
 keyed by digest date and records title, slug, date, source digest ID/date,
 canonical URL, artifact path, publisher, and status.
 
+### SEO and discoverability metadata
+
+Every generated post also carries a second, smaller layer of frontmatter
+whose purpose is discoverability rather than editorial content: it clarifies
+the article's strategic theme, gives the website material for internal
+linking, and lets the site build topic authority over time. This is not
+keyword stuffing; `blog/transformer.py`'s prompt is explicit that these
+fields must never distort or pad the article to fit them, and that nothing
+in them may be invented.
+
+```yaml
+seo_title: "AI Trust, Governance, and Competitive Advantage in Enterprise Adoption"
+topic_cluster: "AI Governance"
+primary_keyword: "AI governance and trust"
+secondary_keywords:
+  - "enterprise AI adoption"
+  - "AI data control"
+  - "AI risk management"
+  - "AI competitive advantage"
+internal_link_targets:
+  - label: "Strategic Digest"
+    url: "/blog"
+    reason: "The post is part of the Strategic Digest analysis archive."
+  - label: "AI Strategy & Operations Consulting"
+    url: "/ai-consulting"
+    reason: "The article discusses AI adoption, governance, and operating advantage."
+    status: "planned"
+suggested_related_posts:
+  - title: "The Trust Gate: Why AI's Winners Will Be Decided by Control, Not Capability"
+    url: "/blog/ai-trust-gate-control-not-capability"
+    reason: "Related analysis on AI trust and enterprise governance."
+```
+
+| Field | Purpose |
+| --- | --- |
+| `seo_title` | An explicit, search-friendly rendering of the story, distinct from the editorial `title`. `title` can be evocative; `seo_title` states the topic plainly. |
+| `topic_cluster` | Exactly one value from a fixed, controlled list (below), so the site can group posts into stable topic hubs instead of an ever-growing free-text tag cloud. |
+| `primary_keyword` | One specific, natural phrase describing the article's core topic. |
+| `secondary_keywords` | 3 to 7 natural phrases a reader would actually search for. Not a keyword-density list; each entry should read like something a person would type. |
+| `internal_link_targets` | 1 to 4 recommended links from a fixed target universe (below), each with a `label`, `url`, `reason`, and an optional `status: "planned"` for pages that don't exist on the site yet. |
+| `suggested_related_posts` | 0 to 3 links to *other* existing StrategicDigest posts, each with `title`, `url`, `reason`. Never invented; see below. |
+
+**Controlled topic clusters** (`blog/seo.py:TOPIC_CLUSTERS`):
+
+AI Operating Systems · AI Agents · Strategy & Operations · AI Governance ·
+Logistics & Workflow Automation · Strategic Intelligence · Markets &
+Business Models · Public Sector & Policy · Leadership & Organizational
+Change · Corporate Strategy · Technology Infrastructure
+
+A `topic_cluster` outside this exact list is treated as invalid, not as a
+new cluster to adopt silently, so the taxonomy can't drift post by post.
+
+**Internal link target universe** (`blog/seo.py:INTERNAL_LINK_TARGET_UNIVERSE`):
+
+`/`, `/blog`, `/ai-consulting`, `/projects/vigil`, `/projects/strategicdigest`,
+`/projects/churnagent`, `/blog/tag/artificial-intelligence`,
+`/blog/tag/enterprise-governance`, `/blog/tag/corporate-strategy`,
+`/blog/tag/strategy-operations`, `/blog/tag/logistics-workflow-automation`,
+`/blog/tag/strategic-intelligence`
+
+Some of these pages (e.g. `/ai-consulting`) don't exist on the live site
+yet. They're still valid recommendations, marked `status: "planned"`, since
+the point is to record the *intended* information architecture as posts are
+written, not to only ever link to what already happens to exist.
+`suggested_related_posts` works the other way around: it may only reference
+posts StrategicDigest already knows about (every other `.md` file in
+`output/blog/`), resolved automatically at generation and check time. A post
+can never suggest a URL for content that doesn't exist anywhere.
+
+**Where this is validated, and the warn-vs-blocker policy.** `blog/seo.py`
+holds the pure validation logic; `blog/approval.py` and `blog/check.py` share
+it through `_evaluate_seo_readiness` so `blog:check` and `blog:approve` can
+never disagree, the same pattern already used for source-coverage checks.
+The policy is rollout-safe on purpose, so every post generated before this
+feature existed keeps passing both commands unmodified:
+
+- **Warning only** (visible in the report, never blocks): any of the six
+  fields is missing entirely, or `secondary_keywords`/`internal_link_targets`/
+  `suggested_related_posts` has fewer or more entries than the recommended
+  range.
+- **Blocks `blog:check` and `blog:approve`**: `topic_cluster` is present but
+  not one of the controlled values; any field is present but structurally
+  malformed (wrong type, missing required keys); or a URL in
+  `internal_link_targets` or `suggested_related_posts` is not on an allowed
+  list (an invented internal path, or a related post that doesn't actually
+  exist).
+
+`blog:check`'s report gets a new section for this:
+
+```text
+SEO / discoverability:
+PASS discoverability metadata present and valid
+```
+
+or, for an older/incomplete draft:
+
+```text
+SEO / discoverability:
+WARN seo_title is missing.
+WARN topic_cluster is missing.
+WARN primary_keyword is missing.
+WARN secondary_keywords is missing.
+WARN internal_link_targets is missing.
+```
+
+**How this supports website discoverability.** These fields are the
+handoff contract for the website repository to consume when it renders a
+post: `topic_cluster` groups posts into stable topic hubs, `internal_link_targets`
+and `suggested_related_posts` give it concrete, non-invented internal links
+to render, and `seo_title`/`primary_keyword`/`secondary_keywords` describe
+the article's intended search identity distinct from its editorial
+headline. This task only produces and validates that metadata on the
+StrategicDigest side; wiring the website's blog renderer to actually read
+and display these new fields is separate, future website-repo work.
+
 ### Configuration
 
 ```dotenv
