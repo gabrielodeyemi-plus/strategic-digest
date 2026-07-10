@@ -8,18 +8,19 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-import yaml
-
 from blog.config import BlogConfig
+from blog.frontmatter import (
+    FRONTMATTER_PATTERN,
+    FrontmatterError,
+    normalize_markdown_frontmatter,
+    parse_markdown_frontmatter,
+)
 from blog.publishers import PublishStateStore
 from blog.seo import evaluate_seo_metadata, known_blog_post_urls
 from blog.sources import has_visible_sources, is_valid_url, split_article_and_sources
 
 
-_FRONTMATTER = re.compile(
-    r"\A---\r?\n(?P<yaml>[\s\S]*?)\r?\n---(?P<after>\r?\n|\Z)"
-)
-_STATUS_LINE = re.compile(r"(?m)^[ \t]*status[ \t]*:[^\r\n]*$")
+_FRONTMATTER = FRONTMATTER_PATTERN
 _VALID_STATE_STATUSES = {"draft", "published", "copied_to_website_repo"}
 
 
@@ -215,17 +216,14 @@ def _validate_and_approve_markdown(
     requested_date: date,
     config: BlogConfig,
 ) -> tuple[dict, str]:
-    match = _FRONTMATTER.match(markdown)
-    if not match:
-        raise ApprovalError(f"{source_path.name} has no valid YAML frontmatter.")
     try:
-        parsed = yaml.safe_load(match.group("yaml"))
-    except yaml.YAMLError as exc:
-        raise ApprovalError(
-            f"{source_path.name} has invalid YAML frontmatter: {exc}"
-        ) from exc
-    if not isinstance(parsed, dict):
-        raise ApprovalError(f"{source_path.name} frontmatter must be an object.")
+        parsed, _match = parse_markdown_frontmatter(
+            markdown,
+            source_path,
+            action="approving",
+        )
+    except FrontmatterError as exc:
+        raise ApprovalError(str(exc)) from exc
 
     seo_readiness = _evaluate_seo_readiness(parsed, config, exclude_path=source_path)
     if seo_readiness["blockers"]:
@@ -257,19 +255,15 @@ def _validate_and_approve_markdown(
             f'{source_path.name} status must be "draft" or "published", '
             f'not "{status}".'
         )
-    if not _STATUS_LINE.search(match.group("yaml")):
-        raise ApprovalError(
-            f'{source_path.name} is missing a writable "status" field.'
+    try:
+        _normalized, updated = normalize_markdown_frontmatter(
+            markdown,
+            source_path,
+            status="published",
+            action="approving",
         )
-
-    approved_yaml = _STATUS_LINE.sub(
-        'status: "published"', match.group("yaml"), count=1
-    )
-    updated = (
-        markdown[:match.start("yaml")]
-        + approved_yaml
-        + markdown[match.end("yaml"):]
-    )
+    except FrontmatterError as exc:
+        raise ApprovalError(str(exc)) from exc
     return parsed, updated
 
 
@@ -279,12 +273,13 @@ def _evaluate_seo_readiness(
     exclude_path: Optional[Path] = None,
 ) -> dict:
     """Thin, shared wrapper around `blog.seo.evaluate_seo_metadata` that
-    resolves "known existing posts" from this StrategicDigest instance's
-    own output directory. `blog:check` and `approve_blog_post` both call
-    this so they can never disagree about whether discoverability metadata
-    is valid. See blog/seo.py for the warn-vs-block policy.
+    resolves known related posts from the website content directory.
+    `blog:check` and `approve_blog_post` both call this so they can never
+    disagree about whether discoverability metadata is valid. See blog/seo.py
+    for the warn-vs-block policy.
     """
-    known_urls = known_blog_post_urls(config.output_dir, exclude_path=exclude_path)
+    content_dir = config.website_repo_path.expanduser() / config.website_content_dir
+    known_urls = known_blog_post_urls(content_dir, exclude_path=exclude_path)
     return evaluate_seo_metadata(frontmatter, known_post_urls=known_urls)
 
 

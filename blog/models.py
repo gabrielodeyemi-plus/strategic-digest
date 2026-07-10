@@ -1,10 +1,11 @@
 """Blog domain models."""
 
-import json
 from dataclasses import asdict, dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import List, Optional
+
+from blog.frontmatter import serialize_frontmatter
 
 
 @dataclass
@@ -49,7 +50,7 @@ class BlogPost:
                 publisher: "..."
                 date: "..."
         """
-        values = {
+        frontmatter = {
             "title": self.title,
             "subtitle": self.subtitle,
             "date": self.date.isoformat(),
@@ -58,106 +59,21 @@ class BlogPost:
             "tags": self.tags,
             "excerpt": self.excerpt,
             "seo_description": self.seo_meta_description,
-        }
-        seo_values = {
             "seo_title": self.seo_title,
             "topic_cluster": self.topic_cluster,
             "primary_keyword": self.primary_keyword,
             "secondary_keywords": self.secondary_keywords,
-        }
-        trailing_values = {
             "source": "Strategic Digest",
             "source_digest_date": self.source_digest_date.isoformat(),
             "source_digest_id": self.source_digest_id,
             "canonical_url": self.canonical_url,
+            "status": self.status,
             "minimum_sources_required": self.minimum_sources_required,
+            "internal_link_targets": self.internal_link_targets,
+            "suggested_related_posts": self.suggested_related_posts,
+            "sources": self.sources,
         }
-        lines = [
-            f"{key}: {json.dumps(value, ensure_ascii=False)}"
-            for key, value in values.items()
-        ]
-        lines.extend(
-            f"{key}: {json.dumps(value, ensure_ascii=False)}"
-            for key, value in seo_values.items()
-        )
-        lines.extend(
-            f"{key}: {json.dumps(value, ensure_ascii=False)}"
-            for key, value in trailing_values.items()
-        )
-        lines.append(self._internal_link_targets_block())
-        lines.append(self._suggested_related_posts_block())
-        lines.append(self._sources_frontmatter_block())
-        lines.append(f"status: {json.dumps(self.status, ensure_ascii=False)}")
-        frontmatter = "\n".join(lines)
-        return f"---\n{frontmatter}\n---\n\n{self.body_markdown.strip()}\n"
-
-    def _internal_link_targets_block(self) -> str:
-        """Renders `internal_link_targets` as a YAML block sequence of
-        {label, url, reason?, status?} objects, e.g.:
-
-            internal_link_targets:
-              - label: "Strategic Digest"
-                url: "/blog"
-                reason: "..."
-                status: "planned"
-        """
-        return _link_list_block("internal_link_targets", self.internal_link_targets, "label")
-
-    def _suggested_related_posts_block(self) -> str:
-        """Renders `suggested_related_posts` as a YAML block sequence of
-        {title, url, reason?} objects, mirroring `_internal_link_targets_block`
-        but keyed on `title` (an existing post's headline) instead of `label`.
-        """
-        return _link_list_block("suggested_related_posts", self.suggested_related_posts, "title")
-
-    def _sources_frontmatter_block(self) -> str:
-        if not self.sources:
-            return "sources: []"
-        lines = ["sources:"]
-        for source in self.sources:
-            lines.append(
-                f'  - title: {json.dumps(source.get("title", ""), ensure_ascii=False)}'
-            )
-            lines.append(
-                f'    url: {json.dumps(source.get("url", ""), ensure_ascii=False)}'
-            )
-            if source.get("publisher"):
-                lines.append(
-                    "    publisher: "
-                    + json.dumps(source["publisher"], ensure_ascii=False)
-                )
-            if source.get("date"):
-                lines.append(
-                    "    date: " + json.dumps(source["date"], ensure_ascii=False)
-                )
-        return "\n".join(lines)
-
-
-def _link_list_block(field_name: str, items: List[dict], name_key: str) -> str:
-    """Shared renderer for the two link-list frontmatter fields
-    (`internal_link_targets`, `suggested_related_posts`), which share the
-    same {name_key, url, reason?, status?} shape. A bare string item is
-    tolerated and rendered with an empty url, so a less-structured transformer
-    payload degrades gracefully instead of raising.
-    """
-    if not items:
-        return f"{field_name}: []"
-    lines = [f"{field_name}:"]
-    for item in items:
-        entry = item if isinstance(item, dict) else {name_key: str(item)}
-        lines.append(
-            f'  - {name_key}: {json.dumps(entry.get(name_key, ""), ensure_ascii=False)}'
-        )
-        lines.append(f'    url: {json.dumps(entry.get("url", ""), ensure_ascii=False)}')
-        if entry.get("reason"):
-            lines.append(
-                "    reason: " + json.dumps(entry["reason"], ensure_ascii=False)
-            )
-        if entry.get("status"):
-            lines.append(
-                "    status: " + json.dumps(entry["status"], ensure_ascii=False)
-            )
-    return "\n".join(lines)
+        return f"---\n{serialize_frontmatter(frontmatter)}\n---\n\n{self.body_markdown.strip()}\n"
 
 
 @dataclass(frozen=True)

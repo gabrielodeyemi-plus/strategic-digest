@@ -27,8 +27,6 @@ from datetime import date
 from pathlib import Path
 from typing import Callable, List, Optional
 
-import yaml
-
 from blog.approval import (
     ApprovalError,
     _FRONTMATTER,
@@ -38,6 +36,7 @@ from blog.approval import (
 )
 from blog.approval import _locate_source as _locate_generated_source
 from blog.config import BlogConfig
+from blog.frontmatter import FrontmatterError, parse_markdown_frontmatter
 from blog.publishers import PublishStateStore
 
 Runner = Callable[..., subprocess.CompletedProcess]
@@ -192,11 +191,11 @@ def create_pr(
     if not match:
         raise PrError(f"{source_path.name} has no valid YAML frontmatter.")
     try:
-        frontmatter = yaml.safe_load(match.group("yaml"))
-    except yaml.YAMLError as exc:
-        raise PrError(f"{source_path.name} has invalid YAML frontmatter: {exc}") from exc
-    if not isinstance(frontmatter, dict):
-        raise PrError(f"{source_path.name} frontmatter must be an object.")
+        frontmatter, _ = parse_markdown_frontmatter(
+            markdown, source_path, action="running blog:pr"
+        )
+    except FrontmatterError as exc:
+        raise PrError(str(exc)) from exc
 
     title = str(frontmatter.get("title") or "").strip()
     status = str(frontmatter.get("status") or "").strip().lower()
@@ -234,6 +233,19 @@ def create_pr(
         raise PrError(
             f"Approved file not found in the website repo: {website_path}. "
             "Run blog:approve again."
+        )
+    website_markdown = website_path.read_text(encoding="utf-8")
+    try:
+        website_frontmatter, _ = parse_markdown_frontmatter(
+            website_markdown, website_path, action="running blog:pr"
+        )
+    except FrontmatterError as exc:
+        raise PrError(str(exc)) from exc
+    website_status = str(website_frontmatter.get("status") or "").strip().lower()
+    if website_status != "published":
+        raise PrError(
+            f'{website_path.name} status is "{website_status or "missing"}", '
+            'not "published". Run blog:approve before blog:pr.'
         )
 
     # 6. Dirty-tree policy: only the approved post's own change is allowed.

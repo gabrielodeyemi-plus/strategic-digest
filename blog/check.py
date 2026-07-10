@@ -13,8 +13,6 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import List, Optional
 
-import yaml
-
 from blog.approval import (
     ApprovalError,
     _FRONTMATTER,
@@ -28,6 +26,7 @@ from blog.approval import (
     _resolve_website_paths,
 )
 from blog.config import BlogConfig
+from blog.frontmatter import FrontmatterError, parse_markdown_frontmatter
 from blog.publishers import PublishStateStore
 from blog.sources import split_article_and_sources
 
@@ -130,17 +129,13 @@ def run_check(requested_date: date, config: BlogConfig) -> CheckResult:
             source_path=source_path,
         )
     try:
-        frontmatter = yaml.safe_load(match.group("yaml"))
-    except yaml.YAMLError as exc:
-        return CheckResult(
-            requested_date=requested_date,
-            fatal_error=f"{source_path.name} has invalid YAML frontmatter: {exc}",
-            source_path=source_path,
+        frontmatter, _ = parse_markdown_frontmatter(
+            markdown, source_path, action="running blog:check"
         )
-    if not isinstance(frontmatter, dict):
+    except FrontmatterError as exc:
         return CheckResult(
             requested_date=requested_date,
-            fatal_error=f"{source_path.name} frontmatter must be an object.",
+            fatal_error=str(exc),
             source_path=source_path,
         )
 

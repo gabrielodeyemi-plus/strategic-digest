@@ -20,7 +20,7 @@ from blog.check import run_check
 from blog.config import BlogConfig
 from blog.models import BlogPost
 from blog.publishers import LocalBlogPublisher, PublishStateStore
-from blog.seo import TOPIC_CLUSTERS, evaluate_seo_metadata
+from blog.seo import TOPIC_CLUSTERS, evaluate_seo_metadata, known_blog_posts
 from blog.transformer import BlogArticleTransformer
 from digest_models import Digest
 from tests.test_approval import DAY, SLUG, TITLE, markdown
@@ -294,7 +294,10 @@ class TransformerSeoTests(unittest.TestCase):
 
     def test_transform_recommends_a_real_known_related_post(self):
         with tempfile.TemporaryDirectory() as temporary:
-            output_dir = Path(temporary)
+            root = Path(temporary)
+            website_repo = root / "website"
+            output_dir = website_repo / "src" / "content" / "blog"
+            output_dir.mkdir(parents=True)
             existing = (
                 "---\n"
                 'title: "The Trust Gate"\n'
@@ -319,7 +322,10 @@ class TransformerSeoTests(unittest.TestCase):
                 )
             )
             config = replace(
-                BlogConfig(), minimum_words=5, maximum_words=5000, output_dir=output_dir
+                BlogConfig(),
+                minimum_words=5,
+                maximum_words=5000,
+                website_repo_path=website_repo,
             )
             transformer = BlogArticleTransformer(config, client=client, model="fake")
 
@@ -330,6 +336,48 @@ class TransformerSeoTests(unittest.TestCase):
                 post.suggested_related_posts[0]["url"],
                 "/blog/ai-trust-gate-control-not-capability",
             )
+
+
+class RelatedPostInventoryTests(unittest.TestCase):
+    def test_inventory_includes_only_published_website_posts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            content_dir = Path(temporary)
+            (content_dir / "published.md").write_text(
+                "---\n"
+                'title: "Published Post"\n'
+                'slug: "published-post"\n'
+                'canonical_url: "https://gabrielodeyemi.com/blog/published-post"\n'
+                'status: "published"\n'
+                "---\n\nBody.\n",
+                encoding="utf-8",
+            )
+            (content_dir / "draft.md").write_text(
+                "---\n"
+                'title: "Draft Post"\n'
+                'slug: "draft-post"\n'
+                'canonical_url: "https://gabrielodeyemi.com/blog/draft-post"\n'
+                'status: "draft"\n'
+                "---\n\nBody.\n",
+                encoding="utf-8",
+            )
+
+            posts = known_blog_posts(content_dir)
+
+            self.assertEqual(posts, [{"title": "Published Post", "url": "/blog/published-post"}])
+
+    def test_inventory_skips_malformed_posts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            content_dir = Path(temporary)
+            (content_dir / "malformed.md").write_text(
+                "---\n"
+                'title: "Broken"\n'
+                'status: "published"\n'
+                'status: "draft"\n'
+                "---\n\nBody.\n",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(known_blog_posts(content_dir), [])
 
 
 class CheckSeoTests(unittest.TestCase):
@@ -426,6 +474,52 @@ class CheckSeoTests(unittest.TestCase):
         seo_messages = " ".join(item.message for item in result.seo_items)
         self.assertNotIn("missing", seo_messages)
         self.assertEqual(result.result_label, "READY")
+
+    def test_unknown_suggested_related_post_blocks_readiness(self):
+        content = pmarkdown().replace(
+            "suggested_related_posts: []\n",
+            "suggested_related_posts:\n"
+            '  - title: "Invented"\n'
+            '    url: "/blog/invented-post"\n'
+            '    reason: "Not real."\n',
+            1,
+        )
+        self.write_post(content=content)
+        result = self.check()
+
+        self.assertFalse(result.ready)
+        self.assertTrue(any("suggested_related_posts" in b for b in result.blockers))
+
+    def test_known_published_suggested_related_post_passes_readiness(self):
+        content_dir = self.website_repo / "src" / "content" / "blog"
+        content_dir.mkdir(parents=True)
+        (content_dir / "2026-07-05-real-post.md").write_text(
+            "---\n"
+            'title: "Real Post"\n'
+            'slug: "real-post"\n'
+            'canonical_url: "https://gabrielodeyemi.com/blog/real-post"\n'
+            'status: "published"\n'
+            "---\n\nBody.\n",
+            encoding="utf-8",
+        )
+        content = pmarkdown().replace(
+            "suggested_related_posts: []\n",
+            "suggested_related_posts:\n"
+            '  - title: "Real Post"\n'
+            '    url: "/blog/real-post"\n'
+            '    reason: "Published related analysis."\n',
+            1,
+        )
+        self.write_post(content=content)
+        result = self.check()
+
+        self.assertTrue(result.ready, result.blockers)
+
+    def test_empty_suggested_related_posts_passes_readiness(self):
+        self.write_post()
+        result = self.check()
+
+        self.assertTrue(result.ready, result.blockers)
 
 
 class ApprovalSeoTests(unittest.TestCase):
@@ -531,7 +625,12 @@ class RegenerateSeoTests(unittest.TestCase):
             result = LocalBlogPublisher(config).publish(post)
             written = result.artifact_path.read_text(encoding="utf-8")
 
-            self.assertIn('status: "draft"', written)
+            self.assertEqual(written.count('\nstatus: "draft"\n'), 1)
+            self.assertRegex(
+                written,
+                r'canonical_url: "https://gabrielodeyemi\.com/blog/'
+                r'capital-moves-toward-the-constraint"\nstatus: "draft"',
+            )
             self.assertIn('topic_cluster: "Strategy & Operations"', written)
             self.assertIn("secondary_keywords:", written)
             self.assertIn("internal_link_targets:", written)

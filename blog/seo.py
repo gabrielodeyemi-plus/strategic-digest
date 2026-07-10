@@ -14,16 +14,15 @@ cluster, a malformed entry, or a URL that was not in an allowed list -- is a
 hard blocker, because that is invented or structurally broken metadata, not
 an incomplete draft.
 
-Nothing in this module performs network calls or touches the website
-repository. `known_blog_posts` only reads local StrategicDigest output
-files, matching the project's existing "never invent a related post" rule.
+Nothing in this module performs network calls. `known_blog_posts` reads the
+local website content directory and only returns posts already marked
+published, matching the project's existing "never invent a related post" rule.
 """
 
-import re
 from pathlib import Path
 from typing import Iterable, List, Optional
 
-import yaml
+from blog.frontmatter import FrontmatterError, parse_markdown_frontmatter
 
 TOPIC_CLUSTERS = (
     "AI Operating Systems",
@@ -62,11 +61,6 @@ MAX_SUGGESTED_RELATED_POSTS = 3
 
 SITE_BASE_URL = "https://gabrielodeyemi.com"
 
-# Duplicated from blog.approval._FRONTMATTER (not imported) so this module
-# has no dependency on blog.approval and can be imported from it instead.
-_FRONTMATTER = re.compile(r"\A---\r?\n(?P<yaml>[\s\S]*?)\r?\n---(?:\r?\n|\Z)")
-
-
 def path_only(url: str) -> str:
     """Strips *only* our own site's base URL prefix so "/blog/x" and
     "https://gabrielodeyemi.com/blog/x" compare equal. Deliberately does not
@@ -93,12 +87,13 @@ def is_allowed_internal_link_url(url: str) -> bool:
 
 
 def known_blog_posts(output_dir: Path, *, exclude_path: Optional[Path] = None) -> List[dict]:
-    """Scans local StrategicDigest output for other generated posts.
+    """Scans website blog content for published posts.
 
     Returns [{"title", "url"}] using each post's frontmatter `title` and
     `canonical_url` (or a `/blog/{slug}` fallback). Unreadable or malformed
-    files are skipped rather than raising, since this is an advisory lookup,
-    not a gate in itself.
+    files are skipped rather than raising, since this is inventory for prompt
+    grounding, not a gate in itself. Drafts are excluded so the transformer
+    cannot recommend current or future posts that are not published.
     """
     output_dir = Path(output_dir)
     if not output_dir.is_dir():
@@ -111,15 +106,14 @@ def known_blog_posts(output_dir: Path, *, exclude_path: Optional[Path] = None) -
             continue
         try:
             raw = path.read_text(encoding="utf-8")
-            match = _FRONTMATTER.match(raw)
-            if not match:
-                continue
-            data = yaml.safe_load(match.group("yaml"))
-            if not isinstance(data, dict):
-                continue
-        except (OSError, yaml.YAMLError):
+            data, _ = parse_markdown_frontmatter(
+                raw, path, action="building related-post inventory"
+            )
+        except (OSError, FrontmatterError):
             continue
 
+        if str(data.get("status") or "").strip().lower() != "published":
+            continue
         title = str(data.get("title") or "").strip()
         slug = str(data.get("slug") or "").strip()
         canonical = str(data.get("canonical_url") or "").strip()
@@ -203,7 +197,7 @@ def evaluate_seo_metadata(frontmatter: dict, known_post_urls: Iterable[str] = ()
             min_count=0,
             max_count=MAX_SUGGESTED_RELATED_POSTS,
             blockers=blockers,
-            url_is_allowed=lambda url: not known_post_urls or path_only(url) in known_post_urls,
+            url_is_allowed=lambda url: path_only(url) in known_post_urls,
             invalid_url_message=(
                 "suggested_related_posts references a post that is not a "
                 "known blog post: {url}"

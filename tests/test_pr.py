@@ -143,6 +143,18 @@ class PrTests(unittest.TestCase):
         with self.assertRaisesRegex(PrError, r'not "published"'):
             self.run_pr(dry_run=True)
 
+    def test_refuses_duplicate_frontmatter_keys_in_website_copy(self):
+        _source, destination = self.write_approved_post()
+        corrupted = destination.read_text(encoding="utf-8").replace(
+            f'slug: "{SLUG}"\n',
+            f'slug: "{SLUG}"\nstatus: "draft"\n',
+            1,
+        )
+        destination.write_text(corrupted, encoding="utf-8")
+
+        with self.assertRaisesRegex(PrError, "Duplicate frontmatter key: status"):
+            self.run_pr(dry_run=True)
+
     # 3. PR command refuses a missing copied website file.
     def test_refuses_missing_copied_website_file(self):
         self.write_approved_post(copy_to_website=False)

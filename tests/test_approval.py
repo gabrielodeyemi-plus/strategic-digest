@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import re
 from dataclasses import replace
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -116,6 +117,10 @@ def markdown(
         f'status: "{status}"\n'
         'excerpt: "A precise strategic reading."\n'
         f"{seo_yaml}"
+        'source: "Strategic Digest"\n'
+        f'source_digest_date: "{post_date}"\n'
+        f'source_digest_id: "strategic-digest-{post_date}"\n'
+        f'canonical_url: "https://gabrielodeyemi.com/blog/{SLUG}"\n'
         f"minimum_sources_required: {minimum_sources_required}\n"
         f"{sources_yaml}"
         "---\n\n"
@@ -124,6 +129,18 @@ def markdown(
         "The implication is clear.\n"
         + (f"\n{body_sources_section}" if body_sources_section else "")
     )
+
+
+def frontmatter_text(content: str) -> str:
+    return content.split("---\n", 2)[1]
+
+
+def body_text(content: str) -> str:
+    return content.split("---\n", 2)[2]
+
+
+def top_level_status_lines(content: str):
+    return re.findall(r'(?m)^status: "[^"]+"$', frontmatter_text(content))
 
 
 class ApprovalTests(unittest.TestCase):
@@ -202,16 +219,71 @@ class ApprovalTests(unittest.TestCase):
         )
         self.assertEqual(metadata["approved_at"], "2026-07-06T19:00:00+00:00")
 
-    def test_approval_changes_only_status_to_published(self):
+    def test_approval_writes_one_published_status_in_stable_position(self):
         source = self.write_post()
         original = source.read_text(encoding="utf-8")
         self.approve()
         approved = source.read_text(encoding="utf-8")
+        frontmatter = frontmatter_text(approved)
 
-        self.assertIn('status: "published"', approved)
-        self.assertEqual(
-            approved.replace('status: "published"', 'status: "draft"'),
-            original,
+        self.assertEqual(top_level_status_lines(approved), ['status: "published"'])
+        self.assertRegex(
+            frontmatter,
+            r'canonical_url: "https://gabrielodeyemi\.com/blog/'
+            + re.escape(SLUG)
+            + r'"\nstatus: "published"\nminimum_sources_required: 3',
+        )
+        self.assertEqual(body_text(approved), body_text(original))
+
+    def test_approval_fails_on_duplicate_status_keys(self):
+        content = markdown().replace(
+            f'slug: "{SLUG}"\n',
+            f'slug: "{SLUG}"\nstatus: "draft"\n',
+            1,
+        )
+        self.write_post(content=content)
+
+        with self.assertRaisesRegex(ApprovalError, "Duplicate frontmatter key: status"):
+            self.approve()
+
+    def test_approval_normalizes_single_nonstandard_status_position(self):
+        content = markdown().replace('status: "draft"\n', "")
+        content = content.replace("sources:\n", 'status: "draft"\nsources:\n', 1)
+        self.write_post(content=content)
+
+        self.approve()
+        approved = self.output_dir.joinpath(f"2026-07-06-{SLUG}.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(top_level_status_lines(approved), ['status: "published"'])
+        self.assertRegex(
+            frontmatter_text(approved),
+            r'canonical_url: "https://gabrielodeyemi\.com/blog/'
+            + re.escape(SLUG)
+            + r'"\nstatus: "published"\nminimum_sources_required: 3',
+        )
+
+    def test_approval_does_not_place_status_inside_link_or_source_lists(self):
+        content = markdown().replace(
+            '    reason: "Part of the Strategic Digest analysis archive."\n',
+            '    reason: "Part of the Strategic Digest analysis archive."\n'
+            '    status: "planned"\n',
+            1,
+        )
+        self.write_post(content=content)
+
+        self.approve()
+        approved = self.output_dir.joinpath(f"2026-07-06-{SLUG}.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(top_level_status_lines(approved), ['status: "published"'])
+        self.assertNotRegex(
+            frontmatter_text(approved),
+            r"sources:\n(?:[\s\S]*?\n)?  -[^\n]*\n(?:    [^\n]*\n)*    status: \"published\"",
+        )
+        self.assertNotRegex(
+            frontmatter_text(approved),
+            r"internal_link_targets:\n(?:[\s\S]*?\n)?  -[^\n]*\n(?:    [^\n]*\n)*    status: \"published\"",
         )
 
     def test_dry_run_does_not_modify_files_or_metadata(self):

@@ -79,9 +79,10 @@ to fit these fields):
   target is not yet live on the site, still include it if it is in the
   allowed universe, and set status to "planned".
 - suggested_related_posts are 0 to 3 recommendations, each an object with
-  title, url, and reason, chosen only from the "known existing posts" list
-  supplied below. If no existing post is genuinely related, return an empty
-  list; never invent a post or a URL.
+  title, url, and reason, chosen only from the "known existing published
+  posts" list supplied below. If the list is empty, or if no published post
+  is genuinely related, return an empty list. Never invent a post, future
+  draft, hypothetical /blog URL, or same-day draft.
 
 Return valid JSON only. Do not use a Markdown code fence."""
 
@@ -102,7 +103,7 @@ CONTROLLED TOPIC CLUSTERS (choose exactly one, verbatim):
 ALLOWED INTERNAL LINK TARGETS (choose 1 to 4 urls, verbatim, from this list only):
 {internal_link_universe}
 
-KNOWN EXISTING BLOG POSTS (choose 0 to 3 from this list only, or none if nothing is genuinely related):
+KNOWN EXISTING PUBLISHED BLOG POSTS (choose 0 to 3 from this list only, or return [] if nothing is genuinely related):
 {known_posts}
 
 Produce a JSON object with exactly these keys:
@@ -125,7 +126,7 @@ Produce a JSON object with exactly these keys:
 - internal_link_targets: 1 to 4 objects {{label, url, reason, status?}},
   urls copied verbatim from ALLOWED INTERNAL LINK TARGETS
 - suggested_related_posts: 0 to 3 objects {{title, url, reason}}, chosen only
-  from KNOWN EXISTING BLOG POSTS (empty list if none genuinely relate)
+  from KNOWN EXISTING PUBLISHED BLOG POSTS (empty list if none genuinely relate)
 
 The article must synthesize the evidence into analysis. It must not merely expand
 the digest bullets. If the digest has no source cards, treat the digest itself as
@@ -161,7 +162,11 @@ class BlogArticleTransformer:
                 "\nREVISION REQUIRED. Correct every issue below:\n- "
                 + "\n- ".join(revision_issues)
             )
-        known_posts = known_blog_posts(self.config.output_dir)
+        website_content_dir = (
+            self.config.website_repo_path.expanduser()
+            / self.config.website_content_dir
+        )
+        known_posts = known_blog_posts(website_content_dir)
         response = self.client.messages.create(
             model=self.model,
             max_tokens=6500,

@@ -178,9 +178,11 @@ yet. They're still valid recommendations, marked `status: "planned"`, since
 the point is to record the *intended* information architecture as posts are
 written, not to only ever link to what already happens to exist.
 `suggested_related_posts` works the other way around: it may only reference
-posts StrategicDigest already knows about (every other `.md` file in
-`output/blog/`), resolved automatically at generation and check time. A post
-can never suggest a URL for content that doesn't exist anywhere.
+known published posts already present in the website repo's
+`src/content/blog/` directory. Drafts, malformed posts, same-day generated
+drafts, and hypothetical future `/blog/...` URLs are excluded from the
+inventory. If no known published post is genuinely related, the transformer
+must write `suggested_related_posts: []`.
 
 **Where this is validated, and the warn-vs-blocker policy.** `blog/seo.py`
 holds the pure validation logic; `blog/approval.py` and `blog/check.py` share
@@ -329,13 +331,37 @@ Result: READY with warnings
 website-path logic as `blog:approve`, so it and `blog:approve --dry-run` can
 never disagree about whether a post is ready.
 
+### Frontmatter safety rules
+
+Generated and approved posts use a single shared frontmatter writer. It
+serializes keys in a deterministic order and keeps `status` as one top-level
+field immediately after `canonical_url`:
+
+```yaml
+canonical_url: "https://gabrielodeyemi.com/blog/example"
+status: "draft"
+minimum_sources_required: 3
+```
+
+Drafts serialize with exactly one `status: "draft"`. Approval normalizes that
+same top-level field to exactly one `status: "published"` before copying the
+file to the website repo. Approval never appends a second `status` field and
+never writes it inside `internal_link_targets`, `suggested_related_posts`, or
+`sources`.
+
+Before normal YAML parsing, `blog:check`, `blog:approve`, and `blog:pr` reject
+duplicate top-level frontmatter keys such as `status`, `title`, `canonical_url`,
+or `sources`. This prevents PyYAML from silently letting a later duplicate
+override an earlier value. Fix the duplicate and rerun `blog:check` before
+approving or opening a PR.
+
 **Warning vs. failure semantics:**
 
 - `PASS` / `FAIL` lines are pass/fail checks. Any `FAIL` blocks approval and
   produces a non-zero exit code (missing/invalid frontmatter, a date
-  mismatch, a failed quality gate, missing or insufficient sources, a missing
-  website repo or content directory, no post found, or more than one post
-  found for the date).
+  mismatch, duplicate top-level frontmatter keys, a failed quality gate,
+  missing or insufficient sources, a missing website repo or content directory,
+  no post found, or more than one post found for the date).
 - `WARN` lines are advisories that do **not** block approval and do **not**
   change the exit code — for example, the destination file already existing
   (approval will require `--force`) or the post's status already being
@@ -351,6 +377,10 @@ never disagree about whether a post is ready.
 .venv/bin/python main.py blog:approve --date 2026-07-06
 # build/commit/push/PR the website repo
 ```
+
+If `blog:approve` or `blog:pr` fails, do not manually push the website repo
+change. Repair the generated or copied frontmatter first, then rerun
+`blog:check` until it passes.
 
 ### Approving a post for the website
 
@@ -375,7 +405,8 @@ The approval command:
 1. Requires exactly one generated Markdown file for the requested date.
 2. Validates YAML frontmatter, required title/date/status fields, slug, and date.
 3. Requires publication metadata proving the article passed editorial review.
-4. Changes only the frontmatter status from `draft` to `published`.
+4. Normalizes frontmatter and changes the single top-level status from
+   `draft` to `published`.
 5. Updates the local generated artifact and copies the same approved content to
    the website's `src/content/blog/` directory.
 6. Records approval and website handoff metadata in `publish-state.json`.
@@ -437,13 +468,15 @@ noted):**
 2. `publish-state.json` shows `publish_status: copied_to_website_repo`.
 3. The approved Markdown file actually exists in
    `BLOG_WEBSITE_CONTENT_DIR` inside the website repo.
-4. The website repo has no dirty changes other than that one file (`git
+4. The generated artifact and website copy have valid frontmatter with no
+   duplicate top-level keys, and the website copy is also `status: "published"`.
+5. The website repo has no dirty changes other than that one file (`git
    status --porcelain`); anything else blocks unless `--force`.
-5. The target branch does not already exist, unless `--force`.
-6. *(Real runs only)* `gh --version` and `gh auth status` succeed. If `gh`
+6. The target branch does not already exist, unless `--force`.
+7. *(Real runs only)* `gh --version` and `gh auth status` succeed. If `gh`
    isn't installed or isn't authenticated, the command fails with install /
    `gh auth login` instructions **before** touching Git.
-7. *(Real runs only, unless `--no-build`)* `npm run build` succeeds in the
+8. *(Real runs only, unless `--no-build`)* `npm run build` succeeds in the
    website repo. A failed build blocks branch creation, commit, and push.
 
 **On success it:**

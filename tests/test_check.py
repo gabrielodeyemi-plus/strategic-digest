@@ -115,6 +115,26 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 2)
         self.assertTrue(any("title" in b for b in result.blockers))
 
+    def test_duplicate_status_key_fails_before_yaml_parse(self):
+        content = pmarkdown().replace(
+            f'slug: "{SLUG}"\n',
+            f'slug: "{SLUG}"\nstatus: "published"\n',
+            1,
+        )
+        self.write_post(content=content)
+        result = self.check()
+
+        self.assertFalse(result.ready)
+        self.assertIn("Duplicate frontmatter key: status", result.fatal_error)
+
+    def test_duplicate_sources_key_fails_and_names_key(self):
+        content = pmarkdown().replace("sources:\n", "sources: []\nsources:\n", 1)
+        self.write_post(content=content)
+        result = self.check()
+
+        self.assertFalse(result.ready)
+        self.assertIn("Duplicate frontmatter key: sources", result.fatal_error)
+
     # 4. Date mismatch fails.
     def test_date_mismatch_fails(self):
         self.write_post(content=pmarkdown(post_date="2026-07-05"))
