@@ -22,6 +22,7 @@ Usage:
 """
 
 import argparse
+import functools
 import json
 import os
 import re
@@ -31,6 +32,8 @@ import time
 from datetime import date, datetime
 from pathlib import Path
 from typing import List, Optional
+
+print = functools.partial(print, flush=True)
 
 STRATEGIC_DIGEST_DIR = Path(__file__).resolve().parent
 WEBSITE_DIR = Path("/Users/olugbengaodeyemi/Downloads/personalwebsite")
@@ -59,6 +62,8 @@ def sanitize_frontmatter(post_file: Path) -> None:
     original = content
 
     # Replace retired /ai-consulting with /projects/strategicdigest
+    content = content.replace('label: "AI consulting services"', 'label: "Strategic Digest intelligence system"')
+    content = content.replace("label: 'AI consulting services'", 'label: "Strategic Digest intelligence system"')
     content = content.replace('url: "/ai-consulting"', 'url: "/projects/strategicdigest"')
     content = content.replace("url: '/ai-consulting'", 'url: "/projects/strategicdigest"')
 
