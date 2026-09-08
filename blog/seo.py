@@ -41,7 +41,7 @@ TOPIC_CLUSTERS = (
 INTERNAL_LINK_TARGET_UNIVERSE = (
     "/",
     "/blog",
-    "/ai-consulting",
+    "/contact",
     "/projects/vigil",
     "/projects/strategicdigest",
     "/projects/churnagent",
@@ -49,7 +49,7 @@ INTERNAL_LINK_TARGET_UNIVERSE = (
     "/blog/tag/enterprise-governance",
     "/blog/tag/corporate-strategy",
     "/blog/tag/strategy-operations",
-    "/blog/tag/logistics-workflow-automation",
+    "/blog/tag/logistics-automation",
     "/blog/tag/strategic-intelligence",
 )
 
