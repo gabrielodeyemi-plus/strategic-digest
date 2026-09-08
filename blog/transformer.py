@@ -221,7 +221,7 @@ class BlogArticleTransformer:
             body_markdown=body,
             excerpt=payload["excerpt"].strip(),
             tags=[str(tag).strip() for tag in payload["tags"] if str(tag).strip()],
-            seo_meta_description=payload["seo_meta_description"].strip(),
+            seo_meta_description=_clean_meta_description(payload.get("seo_meta_description")),
             source_digest_date=digest.digest_date,
             source_digest_id=digest.digest_id,
             canonical_url=canonical_url,
@@ -353,3 +353,14 @@ def _slugify(value: str) -> str:
     value = value.lower().strip()
     value = re.sub(r"[^a-z0-9]+", "-", value)
     return value.strip("-")[:96] or "strategic-digest"
+
+
+def _clean_meta_description(desc: Optional[str]) -> str:
+    desc = str(desc or "").strip()
+    if len(desc) <= 160:
+        return desc
+    truncated = desc[:157]
+    if " " in truncated:
+        truncated = truncated.rsplit(" ", 1)[0]
+    return truncated.rstrip(",.;:") + "..."
+
