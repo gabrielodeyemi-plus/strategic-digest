@@ -219,7 +219,17 @@ def publish_date(target_date: date, skip_deploy: bool = False) -> bool:
     print(f"\n--- Step 7: Pulling main and deploying to Vercel production ---")
     run(["git", "checkout", "main"], cwd=WEBSITE_DIR)
     run(["git", "pull", "origin", "main"], cwd=WEBSITE_DIR)
-    run(["npx", "vercel", "--prod", "--yes"], cwd=WEBSITE_DIR)
+    time.sleep(5)
+    for attempt in range(3):
+        try:
+            run(["npx", "vercel", "--prod", "--yes"], cwd=WEBSITE_DIR)
+            break
+        except Exception as e:
+            if attempt < 2:
+                print(f"Vercel deploy failed on attempt {attempt + 1}, retrying in 10s...")
+                time.sleep(10)
+            else:
+                raise e
 
     # 8. Extract slug and run live verification
     print(f"\n--- Step 8: Verifying live production post ---")
