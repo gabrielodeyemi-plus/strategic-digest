@@ -110,6 +110,11 @@ def publish_date(target_date: date, skip_deploy: bool = False) -> bool:
     ensure_clean_website_main()
     run(["git", "pull", "origin", "main"], cwd=STRATEGIC_DIGEST_DIR, check=False)
 
+    website_post_files = list((WEBSITE_DIR / "src" / "content" / "blog").glob(f"{iso_date}-*.md"))
+    if website_post_files:
+        print(f"Post for {iso_date} already exists on website main: {website_post_files[0].name}")
+        return verify_live_post(iso_date)
+
     # 2. Check or Regenerate Post
     print(f"\n--- Step 2: Preparing blog draft for {iso_date} ---")
     post_files = list((STRATEGIC_DIGEST_DIR / "output" / "blog").glob(f"{iso_date}-*.md"))
@@ -231,12 +236,16 @@ def publish_date(target_date: date, skip_deploy: bool = False) -> bool:
             else:
                 raise e
 
-    # 8. Extract slug and run live verification
-    print(f"\n--- Step 8: Verifying live production post ---")
+    # 8. Run live verification
+    return verify_live_post(iso_date)
+
+
+def verify_live_post(iso_date: str) -> bool:
+    print(f"\n--- Verifying live production post for {iso_date} ---")
     website_post_files = list((WEBSITE_DIR / "src" / "content" / "blog").glob(f"{iso_date}-*.md"))
     if not website_post_files:
         raise RuntimeError(f"Could not find published post file in {WEBSITE_DIR} for {iso_date}")
-    
+
     slug_match = re.search(rf"{iso_date}-(.*)\.md$", website_post_files[0].name)
     if not slug_match:
         raise RuntimeError(f"Could not extract slug from {website_post_files[0].name}")
@@ -246,7 +255,7 @@ def publish_date(target_date: date, skip_deploy: bool = False) -> bool:
     print(f"Slug: {todays_slug}")
     print(f"Testing URL: {live_url}")
 
-    time.sleep(5)  # Allow CDN edge propagation
+    time.sleep(3)  # Allow CDN edge propagation
 
     # Assert title
     title_check = run(["curl", "-sS", "-L", live_url], cwd=WEBSITE_DIR)
