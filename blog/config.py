@@ -26,7 +26,7 @@ class BlogConfig:
     quality_review_enabled: bool = True
     maximum_attempts: int = 2
     website_repo_path: Path = Path(
-        "/Users/olugbengaodeyemi/Downloads/personalwebsite"
+        "/Users/olugbengaodeyemi/personalwebsite"
     )
     website_content_dir: str = "src/content/blog"
     approval_required: bool = True
@@ -40,7 +40,7 @@ class BlogConfig:
         repo_path = (
             os.environ.get("BLOG_WEBSITE_REPO_PATH")
             or os.environ.get("WEBSITE_REPO_PATH")
-            or "/Users/olugbengaodeyemi/Downloads/personalwebsite"
+            or "/Users/olugbengaodeyemi/personalwebsite"
         ).strip()
         config = cls(
             enabled=_bool("BLOG_PUBLISH_ENABLED", True),

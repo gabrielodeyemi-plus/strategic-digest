@@ -36,7 +36,7 @@ from typing import List, Optional
 print = functools.partial(print, flush=True)
 
 STRATEGIC_DIGEST_DIR = Path(__file__).resolve().parent
-WEBSITE_DIR = Path("/Users/olugbengaodeyemi/Downloads/personalwebsite")
+WEBSITE_DIR = Path(os.environ.get("WEBSITE_REPO_PATH") or "/Users/olugbengaodeyemi/personalwebsite")
 VENV_PYTHON = STRATEGIC_DIGEST_DIR / ".venv" / "bin" / "python"
 SITE_URL = "https://gabrielodeyemi.com"
 
