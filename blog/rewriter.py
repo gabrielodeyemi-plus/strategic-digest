@@ -27,12 +27,13 @@ Crucial Objectives:
    - Do NOT add a "## Sources" section (the publishing system generates that separately).
    - Do NOT use em dashes (-- or —); use clean commas, semicolons, or parentheses.
    - Avoid AI clichés: "delve", "landscape", "testament", "underscore", "pivotal", "in today's world", "game-changer".
+4. Article Length Requirement: The rewritten body_markdown MUST be a comprehensive, long-form analytical article between 950 and 1,300 words. Do NOT summarize, outline, or truncate. Rewrite every section and paragraph with substantive, in-depth prose.
 
 Return a JSON object with:
 - title: polished, compelling headline
 - subtitle: sharp, one-sentence dek
 - excerpt: 35-60 words
-- body_markdown: the full rewritten article body in Markdown
+- body_markdown: the full rewritten article body in Markdown (950-1300 words)
 """
 
 
@@ -107,12 +108,24 @@ class BlogArticleRewriter:
     ) -> RewriteResult:
         """Run the editorial pass using the configured secondary model."""
         if self.provider == "gemini":
-            return self._rewrite_with_gemini(title, subtitle, excerpt, body_markdown)
+            res = self._rewrite_with_gemini(title, subtitle, excerpt, body_markdown)
         elif self.provider == "openai":
-            return self._rewrite_with_openai(title, subtitle, excerpt, body_markdown)
+            res = self._rewrite_with_openai(title, subtitle, excerpt, body_markdown)
         else:
             logger.info("No secondary model configured; returning original draft.")
             return RewriteResult(title, subtitle, excerpt, body_markdown)
+
+        # Validate structural integrity
+        headings = re.findall(r"^##\s+(.+?)\s*$", res.body_markdown, re.MULTILINE)
+        words = len(re.findall(r"\b[\w’'-]+\b", res.body_markdown))
+        if words < 850 or not (3 <= len(headings) <= 5) or (headings and headings[-1] != "The Strategic Read"):
+            print(
+                f"WARN: Rewritten draft failed structural validation (words: {words}, "
+                f"H2 count: {len(headings)}, final H2: '{headings[-1] if headings else ''}'). "
+                "Falling back to primary draft."
+            )
+            return RewriteResult(title, subtitle, excerpt, body_markdown)
+        return res
 
     def _rewrite_with_gemini(
         self,
@@ -181,6 +194,7 @@ class BlogArticleRewriter:
                 },
             ],
             "temperature": 0.7,
+            "max_tokens": 4096,
         }
 
         resp = httpx.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload, timeout=60)
