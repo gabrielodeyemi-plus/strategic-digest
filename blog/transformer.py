@@ -227,6 +227,8 @@ class BlogArticleTransformer:
             except Exception as e:
                 print(f"WARN: Editorial rewrite failed ({e}); falling back to primary draft.")
 
+        # Ensure no leading H1 heading exists in the body markdown
+        body_markdown = re.sub(r"^\s*#\s+[^\n]+\n*", "", body_markdown).strip()
         body = strip_sources_section(body_markdown.strip())
         body = f"{body}\n\n{format_sources_section(resolved_sources)}"
 

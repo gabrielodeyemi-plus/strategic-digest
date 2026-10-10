@@ -24,6 +24,7 @@ Crucial Objectives:
 3. Strict Markdown Structure Preservation:
    - Preserve all H2 section headings (e.g., `## The Strategic Read` must remain verbatim).
    - Preserve all inline citations and hyperlinks verbatim.
+   - Do NOT start body_markdown with an H1 heading (#) or repeat the title. Start immediately with the opening thesis paragraph.
    - Do NOT add a "## Sources" section (the publishing system generates that separately).
    - Do NOT use em dashes (-- or —); use clean commas, semicolons, or parentheses.
    - Avoid AI clichés: "delve", "landscape", "testament", "underscore", "pivotal", "in today's world", "game-changer".
@@ -62,6 +63,12 @@ def sanitize_editorial_text(text: str) -> str:
     for pattern, replacement in BANNED_REPLACEMENTS.items():
         cleaned = re.sub(pattern, replacement, cleaned, flags=re.IGNORECASE)
     return cleaned
+
+
+def strip_leading_h1(text: str) -> str:
+    if not text:
+        return text
+    return re.sub(r"^\s*#\s+[^\n]+\n*", "", text).strip()
 
 
 @dataclass
@@ -113,7 +120,9 @@ class BlogArticleRewriter:
             res = self._rewrite_with_openai(title, subtitle, excerpt, body_markdown)
         else:
             logger.info("No secondary model configured; returning original draft.")
-            return RewriteResult(title, subtitle, excerpt, body_markdown)
+            return RewriteResult(title, subtitle, excerpt, strip_leading_h1(body_markdown))
+
+        res.body_markdown = strip_leading_h1(res.body_markdown)
 
         # Validate structural integrity
         headings = re.findall(r"^##\s+(.+?)\s*$", res.body_markdown, re.MULTILINE)
@@ -124,7 +133,7 @@ class BlogArticleRewriter:
                 f"H2 count: {len(headings)}, final H2: '{headings[-1] if headings else ''}'). "
                 "Falling back to primary draft."
             )
-            return RewriteResult(title, subtitle, excerpt, body_markdown)
+            return RewriteResult(title, subtitle, excerpt, strip_leading_h1(body_markdown))
         return res
 
     def _rewrite_with_gemini(
@@ -161,7 +170,7 @@ class BlogArticleRewriter:
             title=sanitize_editorial_text(data.get("title", title)),
             subtitle=sanitize_editorial_text(data.get("subtitle", subtitle)),
             excerpt=sanitize_editorial_text(data.get("excerpt", excerpt)),
-            body_markdown=sanitize_editorial_text(data.get("body_markdown", body_markdown)),
+            body_markdown=strip_leading_h1(sanitize_editorial_text(data.get("body_markdown", body_markdown))),
         )
 
     def _rewrite_with_openai(
@@ -204,5 +213,5 @@ class BlogArticleRewriter:
             title=sanitize_editorial_text(data.get("title", title)),
             subtitle=sanitize_editorial_text(data.get("subtitle", subtitle)),
             excerpt=sanitize_editorial_text(data.get("excerpt", excerpt)),
-            body_markdown=sanitize_editorial_text(data.get("body_markdown", body_markdown)),
+            body_markdown=strip_leading_h1(sanitize_editorial_text(data.get("body_markdown", body_markdown))),
         )
