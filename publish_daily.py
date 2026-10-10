@@ -135,7 +135,7 @@ def ensure_clean_website_main():
     run(["git", "pull", "origin", "main"], cwd=WEBSITE_DIR)
 
 
-def publish_date(target_date: date, skip_deploy: bool = False) -> bool:
+def publish_date(target_date: date, skip_deploy: bool = False, force_regen: bool = True) -> bool:
     iso_date = target_date.isoformat()
     print(f"\n========================================================")
     print(f"  Starting Daily Publishing Routine for: {iso_date}")
@@ -154,7 +154,7 @@ def publish_date(target_date: date, skip_deploy: bool = False) -> bool:
     # 2. Check or Regenerate Post
     print(f"\n--- Step 2: Preparing blog draft for {iso_date} ---")
     post_files = list((STRATEGIC_DIGEST_DIR / "output" / "blog").glob(f"{iso_date}-*.md"))
-    needs_regen = len(post_files) == 0
+    needs_regen = force_regen or len(post_files) == 0
 
     if not needs_regen:
         post_file = post_files[0]
