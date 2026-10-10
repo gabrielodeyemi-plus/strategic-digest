@@ -97,9 +97,17 @@ def sanitize_frontmatter(post_file: Path) -> None:
                 new_tags_text = f'{tags_text}, "strategic intelligence"'
                 content = content.replace(f"tags: [{tags_text}]", f"tags: [{new_tags_text}]")
 
+    # Strip any leading H1 heading from article body
+    parts = content.split("---", 2)
+    if len(parts) >= 3:
+        frontmatter = parts[1]
+        body = parts[2]
+        cleaned_body = re.sub(r"^\s*#\s+[^\n]+\n*", "", body.lstrip("\r\n"))
+        content = f"---{frontmatter}---\n\n{cleaned_body}"
+
     if content != original:
         post_file.write_text(content, encoding="utf-8")
-        print(f"Sanitized frontmatter in {post_file.name}")
+        print(f"Sanitized post content in {post_file.name}")
 
 
 def ensure_clean_website_main():
