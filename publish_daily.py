@@ -88,13 +88,34 @@ def sanitize_frontmatter(post_file: Path) -> None:
 
 
 def ensure_clean_website_main():
-    """Ensure personalwebsite repository is on clean main."""
+    """Ensure personalwebsite repository is on clean main, self-healing orphaned artifacts if needed."""
     status = run(["git", "status", "--porcelain"], cwd=WEBSITE_DIR).stdout.strip()
     if status:
-        raise RuntimeError(
-            f"Website repository has uncommitted changes:\n{status}\n"
-            "Please stash or commit them before running the publishing pipeline."
-        )
+        lines = [line.strip() for line in status.splitlines() if line.strip()]
+        # Check if the dirty files are only leftover blog posts or build artifacts
+        is_safe_to_clean = True
+        for line in lines:
+            parts = line.split(maxsplit=1)
+            if len(parts) < 2:
+                is_safe_to_clean = False
+                break
+            file_path = parts[1]
+            if not (file_path.startswith("src/content/blog/") or file_path.startswith("public/")):
+                is_safe_to_clean = False
+                break
+
+        if is_safe_to_clean:
+            print(f"Self-healing: discarding leftover build/blog artifacts from previous run:\n{status}")
+            run(["git", "checkout", "main"], cwd=WEBSITE_DIR, check=False)
+            run(["git", "checkout", "--", "."], cwd=WEBSITE_DIR, check=False)
+            run(["git", "clean", "-fd", "src/content/blog/"], cwd=WEBSITE_DIR, check=False)
+            status = run(["git", "status", "--porcelain"], cwd=WEBSITE_DIR).stdout.strip()
+
+        if status:
+            raise RuntimeError(
+                f"Website repository has uncommitted changes:\n{status}\n"
+                "Please stash or commit them before running the publishing pipeline."
+            )
     run(["git", "checkout", "main"], cwd=WEBSITE_DIR)
     run(["git", "pull", "origin", "main"], cwd=WEBSITE_DIR)
 

@@ -9,6 +9,7 @@ import anthropic
 
 from blog.config import BlogConfig
 from blog.models import BlogPost
+from blog.rewriter import BlogArticleRewriter
 from blog.seo import (
     INTERNAL_LINK_TARGET_UNIVERSE,
     MAX_INTERNAL_LINK_TARGETS,
@@ -140,6 +141,7 @@ class BlogArticleTransformer:
         config: BlogConfig,
         client=None,
         model: Optional[str] = None,
+        rewriter: Optional[BlogArticleRewriter] = None,
     ):
         self.config = config
         self.client = client or anthropic.Anthropic(
@@ -149,6 +151,7 @@ class BlogArticleTransformer:
             "BLOG_CLAUDE_MODEL",
             os.environ.get("CLAUDE_MODEL", "claude-opus-4-8"),
         )
+        self.rewriter = rewriter or BlogArticleRewriter()
 
     def transform(
         self,
@@ -207,19 +210,36 @@ class BlogArticleTransformer:
         resolved_sources = _resolve_sources(cards, source_ids)
         minimum_required = _minimum_sources_required(digest)
 
-        body = strip_sources_section(payload["body_markdown"].strip())
+        title = payload["title"].strip()
+        subtitle = payload["subtitle"].strip()
+        excerpt = payload["excerpt"].strip()
+        body_markdown = payload["body_markdown"].strip()
+
+        if self.rewriter and self.rewriter.is_available():
+            try:
+                print(f"Applying secondary model editorial rewrite ({self.rewriter.provider})...")
+                rewritten = self.rewriter.rewrite(title, subtitle, excerpt, body_markdown)
+                title = rewritten.title
+                subtitle = rewritten.subtitle
+                excerpt = rewritten.excerpt
+                body_markdown = rewritten.body_markdown
+                print("Editorial rewrite applied successfully.")
+            except Exception as e:
+                print(f"WARN: Editorial rewrite failed ({e}); falling back to primary draft.")
+
+        body = strip_sources_section(body_markdown.strip())
         body = f"{body}\n\n{format_sources_section(resolved_sources)}"
 
         known_post_urls = {p["url"] for p in known_posts}
 
         return BlogPost(
-            title=payload["title"].strip(),
-            subtitle=payload["subtitle"].strip(),
+            title=title,
+            subtitle=subtitle,
             slug=slug,
             date=digest.digest_date,
             author=self.config.author,
             body_markdown=body,
-            excerpt=payload["excerpt"].strip(),
+            excerpt=excerpt,
             tags=[str(tag).strip() for tag in payload["tags"] if str(tag).strip()],
             seo_meta_description=_clean_meta_description(payload.get("seo_meta_description")),
             source_digest_date=digest.digest_date,
