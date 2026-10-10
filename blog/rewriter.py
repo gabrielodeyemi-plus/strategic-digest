@@ -36,6 +36,33 @@ Return a JSON object with:
 """
 
 
+BANNED_REPLACEMENTS = {
+    r"\bin today's fast-paced world\b": "in current market conditions",
+    r"\bit's important to note\b": "notably",
+    r"\bthis underscores\b": "this highlights",
+    r"\bunderscores\b": "highlights",
+    r"\bdelve\b": "examine",
+    r"\bdelving\b": "examining",
+    r"\blandscape\b": "environment",
+    r"\blandscapes\b": "environments",
+    r"\bgame-changer\b": "major shift",
+    r"\bgame-changing\b": "transformative",
+    r"\bnavigating\b": "managing",
+    r"\bnavigate\b": "manage",
+    r"\brobust\b": "resilient",
+}
+
+
+def sanitize_editorial_text(text: str) -> str:
+    if not text:
+        return text
+    # Replace em dashes
+    cleaned = text.replace("—", ", ").replace("–", "-")
+    for pattern, replacement in BANNED_REPLACEMENTS.items():
+        cleaned = re.sub(pattern, replacement, cleaned, flags=re.IGNORECASE)
+    return cleaned
+
+
 @dataclass
 class RewriteResult:
     title: str
@@ -58,12 +85,13 @@ class BlogArticleRewriter:
         self.openai_api_key = openai_api_key or os.environ.get("OPENAI_API_KEY")
         self.openai_model = openai_model or os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 
-        if provider:
-            self.provider = provider.lower()
-        elif self.gemini_api_key:
-            self.provider = "gemini"
+        preferred_provider = provider or os.environ.get("BLOG_REWRITE_PROVIDER")
+        if preferred_provider:
+            self.provider = preferred_provider.lower().strip()
         elif self.openai_api_key:
             self.provider = "openai"
+        elif self.gemini_api_key:
+            self.provider = "gemini"
         else:
             self.provider = "none"
 
@@ -117,10 +145,10 @@ class BlogArticleRewriter:
 
         data = json.loads(text)
         return RewriteResult(
-            title=data.get("title", title),
-            subtitle=data.get("subtitle", subtitle),
-            excerpt=data.get("excerpt", excerpt),
-            body_markdown=data.get("body_markdown", body_markdown),
+            title=sanitize_editorial_text(data.get("title", title)),
+            subtitle=sanitize_editorial_text(data.get("subtitle", subtitle)),
+            excerpt=sanitize_editorial_text(data.get("excerpt", excerpt)),
+            body_markdown=sanitize_editorial_text(data.get("body_markdown", body_markdown)),
         )
 
     def _rewrite_with_openai(
@@ -159,8 +187,8 @@ class BlogArticleRewriter:
         resp.raise_for_status()
         data = json.loads(resp.json()["choices"][0]["message"]["content"])
         return RewriteResult(
-            title=data.get("title", title),
-            subtitle=data.get("subtitle", subtitle),
-            excerpt=data.get("excerpt", excerpt),
-            body_markdown=data.get("body_markdown", body_markdown),
+            title=sanitize_editorial_text(data.get("title", title)),
+            subtitle=sanitize_editorial_text(data.get("subtitle", subtitle)),
+            excerpt=sanitize_editorial_text(data.get("excerpt", excerpt)),
+            body_markdown=sanitize_editorial_text(data.get("body_markdown", body_markdown)),
         )
