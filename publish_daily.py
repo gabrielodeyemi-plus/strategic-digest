@@ -41,14 +41,29 @@ VENV_PYTHON = STRATEGIC_DIGEST_DIR / ".venv" / "bin" / "python"
 SITE_URL = "https://gabrielodeyemi.com"
 
 
-def run(cmd: List[str], cwd: Path, check: bool = True, capture: bool = True) -> subprocess.CompletedProcess:
+def run(
+    cmd: List[str],
+    cwd: Path,
+    check: bool = True,
+    capture: bool = True,
+    timeout: Optional[int] = None,
+    input_data: Optional[str] = None,
+) -> subprocess.CompletedProcess:
     print(f"[{cwd.name}] $ {' '.join(cmd)}")
-    proc = subprocess.run(
-        cmd,
-        cwd=str(cwd),
-        text=True,
-        capture_output=capture,
-    )
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(cwd),
+            text=True,
+            capture_output=capture,
+            input=input_data,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        print(f"Command timed out after {timeout}s: {' '.join(cmd)}", file=sys.stderr)
+        if check:
+            raise RuntimeError(f"Command timed out after {timeout}s: {' '.join(cmd)}") from exc
+        return subprocess.CompletedProcess(cmd, returncode=124, stdout="", stderr=str(exc))
     if check and proc.returncode != 0:
         err = proc.stderr.strip() or proc.stdout.strip()
         print(f"Command failed with exit code {proc.returncode}:\n{err}", file=sys.stderr)
@@ -248,14 +263,15 @@ def publish_date(target_date: date, skip_deploy: bool = False) -> bool:
     time.sleep(5)
     for attempt in range(3):
         try:
-            run(["npx", "vercel", "--prod", "--yes"], cwd=WEBSITE_DIR)
+            run(["vercel", "--prod", "--yes"], cwd=WEBSITE_DIR, timeout=90, input_data="n\n")
             break
         except Exception as e:
             if attempt < 2:
                 print(f"Vercel deploy failed on attempt {attempt + 1}, retrying in 10s...")
                 time.sleep(10)
             else:
-                raise e
+                print(f"WARN: Direct vercel CLI returned ({e}); GitHub CI deployment may already be in progress.")
+                break
 
     # 8. Run live verification
     return verify_live_post(iso_date)
